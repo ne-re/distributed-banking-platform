@@ -1,0 +1,301 @@
+services:
+  # =========================================================================
+  # 1. PERSISTENT DATABASES (Shard A, Shard B, Shard C for Bonus I, and Meta)
+  # =========================================================================
+  db_meta:
+    image: postgres:15-alpine
+    container_name: db_meta
+    environment:
+      POSTGRES_USER: bankuser
+      POSTGRES_PASSWORD: bankpassword
+      POSTGRES_DB: meta_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - meta_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankuser -d meta_db"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    networks:
+      - bank_net
+
+  db_a:
+    image: postgres:15-alpine
+    container_name: db_a
+    command: postgres -c max_prepared_transactions=100 -c max_connections=200
+    environment:
+      POSTGRES_USER: bankuser
+      POSTGRES_PASSWORD: bankpassword
+      POSTGRES_DB: shard_a_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - shard_a_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankuser -d shard_a_db"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    networks:
+      - bank_net
+
+  db_b:
+    image: postgres:15-alpine
+    container_name: db_b
+    command: postgres -c max_prepared_transactions=100 -c max_connections=200
+    environment:
+      POSTGRES_USER: bankuser
+      POSTGRES_PASSWORD: bankpassword
+      POSTGRES_DB: shard_b_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - shard_b_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankuser -d shard_b_db"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    networks:
+      - bank_net
+
+  db_c:
+    image: postgres:15-alpine
+    container_name: db_c
+    command: postgres -c max_prepared_transactions=100 -c max_connections=200
+    environment:
+      POSTGRES_USER: bankuser
+      POSTGRES_PASSWORD: bankpassword
+      POSTGRES_DB: shard_c_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - shard_c_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankuser -d shard_c_db"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    networks:
+      - bank_net
+
+  # =========================================================================
+  # 2. SHARD A APPLICATION REPLICAS (Accounts A0001 - A1000)
+  # =========================================================================
+  bank_a1:
+    build: .
+    image: distributed_banking_app:latest
+    container_name: bank_a1
+    command: uvicorn services.shard_server:app --host 0.0.0.0 --port 8000
+    environment:
+      SHARD_ID: ShardA
+      REPLICA_ID: bank_a1
+      DB_DSN: postgresql://bankuser:bankpassword@db_a:5432/shard_a_db
+      INITIAL_START_ACC: 1
+      INITIAL_END_ACC: 1000
+      INITIAL_BALANCE: 1000
+    labels:
+      app: "bank_replica"
+      shard_id: "ShardA"
+      replica_id: "bank_a1"
+    depends_on:
+      db_a:
+        condition: service_healthy
+    networks:
+      - bank_net
+
+  bank_a2:
+    build: .
+    image: distributed_banking_app:latest
+    container_name: bank_a2
+    command: uvicorn services.shard_server:app --host 0.0.0.0 --port 8000
+    environment:
+      SHARD_ID: ShardA
+      REPLICA_ID: bank_a2
+      DB_DSN: postgresql://bankuser:bankpassword@db_a:5432/shard_a_db
+      INITIAL_START_ACC: 1
+      INITIAL_END_ACC: 1000
+      INITIAL_BALANCE: 1000
+    labels:
+      app: "bank_replica"
+      shard_id: "ShardA"
+      replica_id: "bank_a2"
+    depends_on:
+      db_a:
+        condition: service_healthy
+    networks:
+      - bank_net
+
+  # =========================================================================
+  # 3. SHARD B APPLICATION REPLICAS (Accounts A1001 - A2000)
+  # =========================================================================
+  bank_b1:
+    build: .
+    image: distributed_banking_app:latest
+    container_name: bank_b1
+    command: uvicorn services.shard_server:app --host 0.0.0.0 --port 8000
+    environment:
+      SHARD_ID: ShardB
+      REPLICA_ID: bank_b1
+      DB_DSN: postgresql://bankuser:bankpassword@db_b:5432/shard_b_db
+      INITIAL_START_ACC: 1001
+      INITIAL_END_ACC: 2000
+      INITIAL_BALANCE: 1000
+    labels:
+      app: "bank_replica"
+      shard_id: "ShardB"
+      replica_id: "bank_b1"
+    depends_on:
+      db_b:
+        condition: service_healthy
+    networks:
+      - bank_net
+
+  bank_b2:
+    build: .
+    image: distributed_banking_app:latest
+    container_name: bank_b2
+    command: uvicorn services.shard_server:app --host 0.0.0.0 --port 8000
+    environment:
+      SHARD_ID: ShardB
+      REPLICA_ID: bank_b2
+      DB_DSN: postgresql://bankuser:bankpassword@db_b:5432/shard_b_db
+      INITIAL_START_ACC: 1001
+      INITIAL_END_ACC: 2000
+      INITIAL_BALANCE: 1000
+    labels:
+      app: "bank_replica"
+      shard_id: "ShardB"
+      replica_id: "bank_b2"
+    depends_on:
+      db_b:
+        condition: service_healthy
+    networks:
+      - bank_net
+
+  # =========================================================================
+  # 4. SHARD C APPLICATION REPLICAS (Bonus I: Live Re-Sharding Target)
+  # =========================================================================
+  bank_c1:
+    build: .
+    image: distributed_banking_app:latest
+    container_name: bank_c1
+    command: uvicorn services.shard_server:app --host 0.0.0.0 --port 8000
+    environment:
+      SHARD_ID: ShardC
+      REPLICA_ID: bank_c1
+      DB_DSN: postgresql://bankuser:bankpassword@db_c:5432/shard_c_db
+      INITIAL_START_ACC: 0
+      INITIAL_END_ACC: 0
+      INITIAL_BALANCE: 0
+    labels:
+      app: "bank_replica"
+      shard_id: "ShardC"
+      replica_id: "bank_c1"
+    depends_on:
+      db_c:
+        condition: service_healthy
+    networks:
+      - bank_net
+
+  bank_c2:
+    build: .
+    image: distributed_banking_app:latest
+    container_name: bank_c2
+    command: uvicorn services.shard_server:app --host 0.0.0.0 --port 8000
+    environment:
+      SHARD_ID: ShardC
+      REPLICA_ID: bank_c2
+      DB_DSN: postgresql://bankuser:bankpassword@db_c:5432/shard_c_db
+      INITIAL_START_ACC: 0
+      INITIAL_END_ACC: 0
+      INITIAL_BALANCE: 0
+    labels:
+      app: "bank_replica"
+      shard_id: "ShardC"
+      replica_id: "bank_c2"
+    depends_on:
+      db_c:
+        condition: service_healthy
+    networks:
+      - bank_net
+
+  # =========================================================================
+  # 5. TRANSACTION COORDINATOR (2PC & Live Migration State Machine)
+  # =========================================================================
+  coordinator:
+    build: .
+    image: distributed_banking_app:latest
+    container_name: coordinator
+    command: uvicorn services.coordinator:app --host 0.0.0.0 --port 8000
+    environment:
+      META_DB_DSN: postgresql://bankuser:bankpassword@db_meta:5432/meta_db
+      GATEWAY_URL: http://gateway:8000
+    ports:
+      - "8001:8000"
+    depends_on:
+      db_meta:
+        condition: service_healthy
+      bank_a1:
+        condition: service_started
+      bank_b1:
+        condition: service_started
+    networks:
+      - bank_net
+
+  # =========================================================================
+  # 6. SHARD-AWARE GATEWAY (Single Entrypoint for Banking Clients)
+  # =========================================================================
+  gateway:
+    build: .
+    image: distributed_banking_app:latest
+    container_name: gateway
+    command: uvicorn services.gateway:app --host 0.0.0.0 --port 8000
+    environment:
+      META_DB_DSN: postgresql://bankuser:bankpassword@db_meta:5432/meta_db
+      COORDINATOR_URL: http://coordinator:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      db_meta:
+        condition: service_healthy
+      coordinator:
+        condition: service_started
+    networks:
+      - bank_net
+
+  # =========================================================================
+  # 7. AUTONOMOUS SELF-HEALING CONTROLLER (Bonus II)
+  # =========================================================================
+  self_healer:
+    build: .
+    image: distributed_banking_app:latest
+    container_name: self_healer
+    command: uvicorn services.self_healer:app --host 0.0.0.0 --port 8000
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      DOCKER_NETWORK: distributed_banking_bank_net
+      IMAGE_NAME: distributed_banking_app:latest
+      AUTO_HEAL_ENABLED: "false"
+    ports:
+      - "8002:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      gateway:
+        condition: service_started
+    networks:
+      - bank_net
+
+volumes:
+  meta_data:
+  shard_a_data:
+  shard_b_data:
+  shard_c_data:
+
+networks:
+  bank_net:
+    name: distributed_banking_bank_net
+    driver: bridge
